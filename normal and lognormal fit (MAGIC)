@@ -1,0 +1,103 @@
+import numpy as np
+import matplotlib.pyplot as plt
+from scipy.stats import lognorm, norm
+from scipy.optimize import curve_fit
+from scipy.stats import chi2
+
+# Carico i dati di MAGIC
+data = np.loadtxt('MAGIC.txt', comments='!', delimiter='\t')
+x = data[:, 0]
+err_x = data[:, 1]
+y = data[:, 2]
+err_y = data[:, 3]
+
+# Creo l'istogramma per i dati di FERMI
+fig, ax4 = plt.subplots(1, 1, sharex=True, figsize=(8, 6))
+hist, bin_edges, patches = ax4.hist(y, bins=50, color='cyan', alpha=0.5, edgecolor='black', label='Data')
+ax4.set_xlabel('Values (1/cm2/s)')
+ax4.set_ylabel('Counts')
+ax4.set_title('MAGIC histogram')
+
+# Calcolo e plotto i centroidi
+bin_centers = (bin_edges[:-1] + bin_edges[1:]) / 2
+ax4.scatter(bin_centers, hist, color='black', marker='o', label='Bin Centers')
+
+# Togli i primi 3 elementi da hist_data e bin_centers_data
+hist = hist[2:]
+bin_centers = bin_centers[2:]
+
+# Fit dei dati con la funzione log-normale
+def lognorm_fit(x, A, mu, sigma):
+    return A * lognorm.pdf(x, sigma, loc=0, scale=mu)
+
+# Fit dei dati con la funzione normale
+def normal_fit(x, A, mu, sigma):
+    return A * norm.pdf(x, mu, sigma)
+
+# Inizializzo i parametri del fit in base ai dati
+mean_data = np.mean(y)
+std_data = np.std(y)
+params_initial = [max(hist), mean_data, std_data]
+
+# Eseguo il fit ed estraggo i parametri stimati per il fit log-normale
+params_lognorm, _ = curve_fit(lognorm_fit, bin_centers, hist, p0=[1, 5, 3])
+A_fit_lognorm, mu_fit_lognorm, sigma_fit_lognorm = params_lognorm
+
+# Eseguo il fit ed estraggo i parametri stimati per il fit normale
+params_normal, _ = curve_fit(normal_fit, bin_centers, hist, p0=params_initial)
+A_fit_normal, mu_fit_normal, sigma_fit_normal = params_normal
+
+# Creo una curva log-normale con i parametri del fit e la plotto sull'istogramma
+x2 = np.linspace(min(bin_centers), max(bin_centers), 1000)
+fit_y_lognorm = lognorm_fit(x2, *params_lognorm)
+ax4.plot(x2, fit_y_lognorm, 'r-', label='Log-Normal Fit')
+
+# Creo una curva normale con i parametri del fit e la plotto sull'istogramma
+fit_y_normal = normal_fit(x2, *params_normal)
+ax4.plot(x2, fit_y_normal, 'g-', label='Normal Fit')
+
+# Calcolo il valore atteso per ciascun bin usando la funzione log-normale
+expected_values_lognorm = lognorm_fit(bin_centers, *params_lognorm)
+
+# Calcolo il valore atteso per ciascun bin usando la funzione normale
+expected_values_normal = normal_fit(bin_centers, *params_normal)
+
+# Calcola il Chi-quadro per il fit log-normale
+chi_squared_lognorm = np.sum(((hist - expected_values_lognorm) ** 2 / expected_values_lognorm))
+
+# Calcola il Chi-quadro per il fit normale
+chi_squared_normal = np.sum(((hist - expected_values_normal) ** 2 / expected_values_normal))
+
+# Calcola i gradi di libertà
+degrees_of_freedom = len(bin_centers) - len(params_normal)
+
+# Calcola il Chi-quadro ridotto
+chi_squared_reduced_lognorm = chi_squared_lognorm / degrees_of_freedom
+chi_squared_reduced_normal = chi_squared_normal / degrees_of_freedom
+
+# Calcolo il p-value usando la distribuzione del chi-quadro
+p_value_lognorm = 1 - chi2.cdf(chi_squared_lognorm, degrees_of_freedom)
+p_value_normal = 1 - chi2.cdf(chi_squared_normal, degrees_of_freedom)
+
+# Stampa i parametri del fit normale
+print("Parametri del fit normale (A, mu, sigma):", A_fit_normal, mu_fit_normal, sigma_fit_normal)
+
+# Stampa i risultati
+print("Chi-Squared (Log-Normal Fit):", chi_squared_lognorm)
+print("Chi-Squared (Normal Fit):", chi_squared_normal)
+print("Degrees of Freedom:", degrees_of_freedom)
+print("Reduced Chi-Squared (Log-Normal Fit):", chi_squared_reduced_lognorm)
+print("Reduced Chi-Squared (Normal Fit):", chi_squared_reduced_normal)
+print("P-Value (Log-Normal Fit):", p_value_lognorm)
+print("P-Value (Normal Fit):", p_value_normal)
+
+# Imposta le etichette degli assi e personalizza la dimensione del testo
+ax4.set_xlabel('Values (1/cm2/s)', fontsize=18)
+ax4.set_ylabel('Counts', fontsize=18)
+ax4.set_title('PG1553+113 MAGIC Histogram', fontsize=20)
+
+# Personalizza la dimensione del testo sugli assi
+ax4.tick_params(axis='both', labelsize=15)
+
+plt.tight_layout()
+plt.show()
