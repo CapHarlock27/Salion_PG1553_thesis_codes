@@ -1,0 +1,70 @@
+import numpy as np
+import matplotlib.pyplot as plt
+from scipy.optimize import curve_fit
+from scipy.stats import chi2
+
+# Carico i dati del file rms-flux_relation_with_names.txt
+data = np.loadtxt('rms-flux_from_fit.txt', comments='!', delimiter='\t', dtype=str)
+point_names = data[:, 0]  # Aggiunto: nome del punto
+flux = data[:, 1].astype(float)
+rms = data[:, 2].astype(float)
+err_rms = data[:, 3].astype(float)  # Aggiunto: errore su rms
+n = len(flux)
+
+# Definisci la funzione del fit lineare
+def linear_fit(x, a, b):
+    return a * x + b
+
+# Esegui il fit lineare con l'errore su y
+params, covariance = curve_fit(linear_fit, flux, rms, sigma=err_rms, absolute_sigma=True)
+
+# Calcola gli errori sui parametri del fit
+errors = np.sqrt(np.diag(covariance))
+
+# Calcola il test del chi-quadro
+predicted = linear_fit(flux, *params)
+chi_2 = np.sum((rms - predicted)**2 / err_rms**2)
+reduced_chi_2 = chi_2 / (n - 1)
+
+# Calcola il p-value
+p_value = 1 - chi2.cdf(chi_2, n - 1)
+
+# Crea un grafico dei dati e del fit lineare con barre d'errore a forma di T
+plt.errorbar(flux, rms, yerr=err_rms, fmt='o', capsize=5, label='Datas', color='black', ecolor='blue', alpha=0.7)  # Barre d'errore blu
+
+# Calcola le barre d'errore sull'asse x
+err_flux = rms / np.sqrt(n)
+
+# Crea un grafico dei dati e del fit lineare con barre d'errore a forma di T su entrambi gli assi
+plt.errorbar(flux, rms, xerr=err_flux, yerr=err_rms, fmt='o', capsize=5, label='Data', color='black', ecolor='blue', alpha=0.3)  # Barre d'errore blu
+
+# Definisci le coordinate xytext personalizzate per ogni punto
+xytext_array = [(15, -15), (-20, -20), (-25, 0), (40, -10), (-20, 5), (-20, 10), (-30, 5), (0, 30), (20, -10), (30, -10)]
+
+# Aggiungi etichette personalizzate e colora il punto magenta se il nome è "PG1553"
+for i, txt in enumerate(point_names):
+    if txt == 'PG1553':
+        color = 'green'
+        plt.scatter(flux[i], rms[i], color=color)  # Colora il punto magenta
+    else:
+        color = 'black'
+    plt.annotate(txt, (flux[i], rms[i]), textcoords="offset points", xytext=xytext_array[i], ha='center', fontsize=8, color=color)
+
+plt.plot(flux, linear_fit(flux, *params), 'r-', label='Linear Fit')
+
+# Mostra il risultato del test del chi-quadro e gli errori sui parametri
+print("Parametri del fit lineare (a, b):", params)
+print("Errori sui parametri del fit (err_a, err_b):", errors)
+print("Chi quadro:", chi_2)
+print("p-value:", p_value)  # Stampa il p-value
+print("Considerando che il numero di eventi è,", n, "allora ho", n-1, "gradi di libertà. Per cui il Chi quadro ridotto è:", reduced_chi_2)
+
+# Aggiungi una legenda e mostra il grafico
+#plt.legend()
+plt.xlabel('Flux (1/cm2/s)', fontsize=18)
+plt.ylabel(r'$\tilde{\sigma}$ (1/cm2/s)', fontsize=18)  # Utilizzo del simbolo sigma con tilde sopra
+plt.title(r'$\tilde{\sigma}$-Flux distribution (from fit)', fontsize=20)  # Utilizzo del simbolo sigma con tilde sopra nel titolo
+
+# Personalizza la dimensione del testo sugli assi
+plt.tick_params(axis='both', labelsize=12)
+plt.show()
