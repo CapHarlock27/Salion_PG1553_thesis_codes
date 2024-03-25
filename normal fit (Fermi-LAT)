@@ -1,0 +1,100 @@
+import numpy as np
+import matplotlib.pyplot as plt
+from scipy.stats import norm
+from scipy.optimize import curve_fit
+
+# Carico i dati dal file "PG1553_with_uppers_3d.txt"
+data = np.loadtxt('PG1553_with_uppers_3d.txt', comments='!', delimiter='\t', dtype=object)
+
+# Inizializzo due set: uno per i dati "normali" e uno per gli "upper limits"
+data_list = []
+uppers_list = []
+uppers_count = 0
+
+# Analizzo ogni riga del file distinguendo uppers e dati normali mediante l'uso di "<"
+for row in data:
+    x, y, err_y = row
+
+    if '<' in y:
+        y = y.replace('<', '')
+        uppers_list.append([float(x), float(y), float(err_y) if err_y != '-' else 0.0])
+        uppers_count += 1
+    else:
+        data_list.append([float(x), float(y), float(err_y) if err_y != '-' else 0.0])
+
+# Converto le liste in array di numpy e stampo il numero di conteggi di upper limits
+data_array = np.array(data_list)
+uppers_array = np.array(uppers_list)
+print("Numero di upper limits:", uppers_count)
+
+# Creo l'istogramma per i dati normali e con '<'
+fig, ax4 = plt.subplots(1, 1, sharex=True, figsize=(8, 6))
+bin_edges = np.histogram_bin_edges(data_array[:, 1], bins=30)
+hist_data, bin_edges_data, patches_data = ax4.hist(data_array[:, 1], bins=bin_edges, color='violet', edgecolor='black', alpha=0.7, label='Fermi-LAT datas')
+hist_uppers, _, _ = ax4.hist(uppers_array[:, 1], bins=bin_edges, color='orange', edgecolor='black', alpha=0.7, label='Upper Limits', bottom=hist_data)
+
+# Calcolo e plotto i centroidi dei dati
+bin_centers_data = (bin_edges_data[:-1] + bin_edges_data[1:]) / 2
+ax4.scatter(bin_centers_data, hist_data, color='black', marker='o', label='Bin Centers')
+
+# Togli i primi 3 elementi da hist_data e bin_centers_data
+hist_data = hist_data[3:]
+bin_centers_data = bin_centers_data[3:]
+
+# Togli l'ultimo bin per il calcolo del fit
+bin_centers_data = bin_centers_data[:-1]
+hist_data = hist_data[:-1]
+
+# Faccio il fit dei dati con la funzione gaussiana
+def gaussian_fit(x, A, mu, sigma):
+    return A * norm.pdf(x, loc=mu, scale=sigma)
+
+# Inizializzo i parametri del fit in base ai dati
+mean_data = np.mean(data_array[:, 1])
+std_data = np.std(data_array[:, 1])
+params_initial = [max(hist_data), mean_data, std_data]
+
+# Eseguo il fit ed estraggo i parametri stimati
+params, _ = curve_fit(gaussian_fit, bin_centers_data, hist_data, p0=params_initial)
+A_fit, mu_fit, sigma_fit = params
+
+# Calcolo il valore dei parametri secondo la distribuzione gaussiana e printo
+print("Parametri finali del fit (mu, sigma):", mu_fit, sigma_fit)
+
+# Creo una curva gaussiana con i parametri del fit e la plotto sull'istogramma
+x_fit = np.linspace(min(bin_centers_data), max(bin_centers_data), 1000)
+fit_y = gaussian_fit(x_fit, *params)
+ax4.plot(x_fit, fit_y, 'r-', label='Gaussian Fit')
+
+# Calcola i valori attesi usando la funzione gaussiana con i parametri del fit
+expected_values = gaussian_fit(bin_centers_data, A_fit, mu_fit, sigma_fit)
+
+# Calcola il chi quadrato ridotto
+chi_squared = np.sum((hist_data - expected_values)**2 / expected_values)
+
+# Calcola il numero di gradi di libertà
+degrees_of_freedom = len(bin_centers_data) - len(params)
+
+#Calcolo il chi quadro ridotto
+reduced_chi_squared = chi_squared / degrees_of_freedom
+
+# Stampa i risultati
+print("Chi Quadro:", chi_squared)
+print("Gradi di Libertà:", degrees_of_freedom)
+print("Chi Quadrato Ridotto:", reduced_chi_squared)
+
+
+# Imposta le etichette degli assi e personalizza la dimensione del testo
+ax4.set_xlabel('Values (1/cm2/s)', fontsize=18)
+ax4.set_ylabel('Counts', fontsize=18)
+ax4.set_title('PG1553+113 Fermi-LAT Histogram (gaussian fit)', fontsize=20)
+
+# Personalizza la dimensione del testo sugli assi
+ax4.tick_params(axis='both', labelsize=15)
+
+# Personalizza la dimensione del testo nella legenda
+#ax4.legend(fontsize=12)
+
+# Mostro tutto
+plt.tight_layout()
+plt.show()
