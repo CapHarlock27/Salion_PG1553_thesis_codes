@@ -1,0 +1,51 @@
+import numpy as np
+import matplotlib.pyplot as plt
+from scipy.optimize import curve_fit
+from scipy.stats import lognorm
+from scipy.stats import pearsonr, spearmanr, ttest_ind, chi2_contingency
+
+# Genera dati casuali secondo una distribuzione lognormale
+mu_fit = -16.74880756281945  # Media della distribuzione lognormale
+sigma_fit = 0.371730022685363  # Deviazione standard della distribuzione lognormale
+
+# Generatore di valori random che seguono la distribuzione normale con i parametri dati (simulazione di 1000 dati)
+np.random.seed()
+rndm_data = np.exp(np.random.normal(mu_fit, sigma_fit, 1000))
+
+# Crea l'istogramma per i dati generati casualmente
+fig, ax4 = plt.subplots(1, 1, sharex=True, figsize=(8, 6))
+hist, bin_edges, patches = ax4.hist(rndm_data, bins=30, color='green', edgecolor='black', label='Data')
+ax4.set_xlabel('Values (1/cm2/s)')
+ax4.set_ylabel('Counts')
+ax4.set_title('Generated Log-Normal data from Fermi\'s data')
+
+# Calcolo e plotto i centroidi
+bin_centers = (bin_edges[:-1] + bin_edges[1:]) / 2
+ax4.scatter(bin_centers, hist, color='black', marker='o', label='Bin Centers')
+
+# Fit dei dati con la funzione log-normale
+def lognorm_fit(x, A, mu, sigma):
+    return A * lognorm.pdf(x, sigma, loc=0, scale=np.exp(mu))
+
+# Valori iniziali per i parametri del fit
+p0 = [1, 4, 3]
+
+# Eseguo il fit ed estraggo i parametri stimati
+params, _ = curve_fit(lognorm_fit, bin_centers, hist, p0=p0)
+A_fit, mu_fit, sigma_fit = params
+
+# Calcolo il valore dei parametri secondo la distribuzione log-normale e stampo
+mu_fin = np.exp(mu_fit + 0.5 * sigma_fit ** 2)
+sigma_fin = np.sqrt(np.exp(2 * mu_fit + sigma_fit ** 2) * (np.exp(sigma_fit ** 2) - 1))
+print("Parametri del fit log-normale (mu, sigma):", mu_fin, sigma_fin)
+
+# Creo una curva log-normale con i parametri del fit e la plotto sull'istogramma
+x = np.linspace(min(bin_centers), max(bin_centers), 1000)
+fit_y = lognorm_fit(x, *params)
+ax4.plot(x, fit_y, 'r-', label='Log-Normal Fit')
+
+# Personalizza la dimensione del testo sugli assi
+ax4.tick_params(axis='both', labelsize=15)
+
+plt.tight_layout()
+plt.show()
