@@ -1,0 +1,142 @@
+import numpy as np
+import matplotlib.pyplot as plt
+from scipy.stats import lognorm
+from scipy.optimize import curve_fit
+import pandas as pd
+import scipy.stats
+
+# Carica i dati di FERMI con pandas
+data_fermi = pd.read_csv('PG1553_with_uppers_3d.txt', comment='!', delimiter='\t', names=['x', 'y', 'err_y'])
+
+# Filtra le righe con err_y pari a '-'
+filtered_data_fermi = data_fermi[data_fermi['err_y'] != '-']
+
+# Converti i dati filtrati in array NumPy
+x_fermi = filtered_data_fermi['x'].values.astype(float)
+y_fermi = filtered_data_fermi['y'].values.astype(float)
+err_y_fermi = filtered_data_fermi['err_y'].values.astype(float)
+
+# Carico i dati di MAGIC
+data_magic = np.loadtxt('MAGIC.txt', comments='!', delimiter='\t')
+x_magic = data_magic[:, 0]
+err_x_magic = data_magic[:, 1]
+y_magic = data_magic[:, 2]
+err_y_magic = data_magic[:, 3]
+
+# Nuove liste per i dati finali di FERMI
+final_x_fermi = []
+final_y_fermi = []
+final_err_y_fermi = []
+
+# Set per tenere traccia degli indici MAGIC utilizzati
+used_indices_magic = set()
+
+# Ciclo sui dati di FERMI
+for i, x_fermi_point in enumerate(x_fermi):
+    # Controlla se siamo all'inizio o alla fine dell'array
+    if i == 0:
+        prev_x_fermi = x_fermi[0]
+        next_x_fermi = x_fermi[1]
+    elif i == len(x_fermi) - 1:
+        prev_x_fermi = x_fermi[-2]
+        next_x_fermi = x_fermi[-1]
+    else:
+        prev_x_fermi = x_fermi[i - 1]
+        next_x_fermi = x_fermi[i + 1]
+
+    # Trova indici dei dati di MAGIC entro l'intervallo specificato
+    indices_magic = np.where((x_magic >= x_fermi_point - 0.5 * (x_fermi_point - prev_x_fermi)) &
+                             (x_magic <= x_fermi_point + 0.5 * (next_x_fermi - x_fermi_point)))[0]
+
+    # Se ci sono dati di MAGIC entro l'intervallo
+    if len(indices_magic) > 0:
+        # Utilizza solo il primo indice MAGIC
+        index_magic = next(iter(indices_magic))
+
+        # Aggiungi l'indice MAGIC ai dati già utilizzati
+        used_indices_magic.add(index_magic)
+
+        # Aggiungi i dati di FERMI solo se non sono nell'intervallo MAGIC
+        if i not in used_indices_magic:
+            final_x_fermi.append(x_fermi_point)
+            final_y_fermi.append(y_fermi[i])
+            final_err_y_fermi.append(err_y_fermi[i])
+    else:
+        # Se non ci sono dati di MAGIC nell'intervallo, salta al prossimo punto FERMI
+        continue
+
+# Converto le liste in array di numpy
+final_x_fermi = np.array(final_x_fermi)
+final_y_fermi = np.array(final_y_fermi)
+final_err_y_fermi = np.array(final_err_y_fermi)
+
+# Stampa i dati utilizzati nell'istogramma
+#print("Dati utilizzati nell'istogramma:")
+#for x, y, err_y in zip(final_x_fermi, final_y_fermi, final_err_y_fermi):
+#    print(f"x: {x}, y: {y}, err_y: {err_y}")
+
+# Creo l'istogramma per i dati finali di FERMI
+fig, ax4 = plt.subplots(1, 1, sharex=True, figsize=(8, 6))
+hist, bin_edges, patches = ax4.hist(final_y_fermi, bins=20, color='violet', edgecolor='black', alpha=0.7, label='Final datas')
+ax4.set_xlabel('Values (1/cm2/s)', fontsize=18)
+ax4.set_ylabel('Counts', fontsize=18)
+ax4.set_title('Fermi-LAT histogram with MAGIC "holes"', fontsize=20)
+
+# Calcolo e plotto i centroidi dei dati finali di FERMI
+bin_centers_data = (bin_edges[:-1] + bin_edges[1:]) / 2
+ax4.scatter(bin_centers_data, hist, color='black', marker='o', label='Bin Centers')
+
+# Faccio il fit dei dati finali di FERMI con la funzione log-normale
+def lognorm_fit(x, A, mu, sigma):
+    return A * lognorm.pdf(x, sigma, loc= 0, scale= mu)
+
+# Inizializzo i parametri del fit in base ai dati
+mean_data = np.mean(y_fermi)
+std_data = np.std(y_fermi)
+params_initial = [max(hist), mean_data, std_data]
+
+# Eseguo il fit ed estraggo i parametri stimati
+params, _ = curve_fit(lognorm_fit, bin_centers_data, hist, p0=[1, 5, 3])
+A_fit, mu_fit, sigma_fit = params
+#print(mu_fit, sigma_fit)
+
+# Calcolo il valore dei parametri secondo la distribuzione log-normale e printo
+mu_fin = np.exp(mu_fit + 0.5 * sigma_fit ** 2)
+sigma_fin = np.sqrt(np.exp(2 * mu_fit + sigma_fit ** 2) * (np.exp(sigma_fit ** 2) - 1))
+print("Parametri del fit log-normale (mu, sigma):", mu_fin, sigma_fin)
+
+# Creo una curva log-normale con i parametri del fit e la plotto sull'istogramma
+x_fit = np.linspace(min(bin_centers_data), max(bin_centers_data), 1000)
+fit_y = lognorm_fit(x_fit, *params)
+ax4.plot(x_fit, fit_y, 'r-', label='Log-Normal Fit')
+
+# Calcolo il valore atteso per ciascun bin usando la funzione log-normale
+expected_values = lognorm_fit(bin_centers_data, *params)
+print(expected_values)
+
+# Calcola il Chi-quadro
+chi_squared = np.sum(((hist - expected_values)** 2 / expected_values))
+
+# Calcola i gradi di libertà
+degrees_of_freedom = len(bin_centers_data) - len(params)
+
+# Calcola il Chi-quadro ridotto
+chi_squared_reduced = chi_squared / degrees_of_freedom
+
+# Stampa i risultati
+print("Chi-Squared:", chi_squared)
+print("Degrees of Freedom:", degrees_of_freedom)
+print("Reduced Chi-Squared:", chi_squared_reduced)
+
+# Calcolo del p-value
+p_value = 1 - scipy.stats.chi2.cdf(chi_squared, degrees_of_freedom)
+print("P-Value:", p_value)
+
+# Personalizza la dimensione del testo sugli assi
+ax4.tick_params(axis='both', labelsize=15)
+
+# Mostro tutto
+#ax4.legend()
+
+plt.tight_layout()
+plt.show()
