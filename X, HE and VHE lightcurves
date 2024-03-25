@@ -1,0 +1,162 @@
+import numpy as np
+import matplotlib.pyplot as plt
+from scipy.optimize import curve_fit
+from scipy.stats import chisquare
+from scipy.stats import chi2
+
+# Imposta le dimensioni del testo globale
+plt.rcParams['font.size'] = 22
+plt.rcParams['axes.labelsize'] = 18
+plt.rcParams['axes.titlesize'] = 20
+plt.rcParams['xtick.labelsize'] = 18
+plt.rcParams['ytick.labelsize'] = 18
+
+# Carico i dati di "MAGIC.txt"
+data1 = np.loadtxt('MAGIC.txt', comments='!', delimiter='\t')
+x1 = data1[:, 0]
+err_x1 = data1[:, 1]
+y1 = data1[:, 2]
+err_y1 = data1[:, 3]
+
+# Carico i dati dal file "PG1553_with_uppers_3d.txt"
+data2 = np.loadtxt('PG1553_with_uppers_3d.txt', comments='!', delimiter='\t', dtype=object)
+
+# Inizializzo due set: uno per i dati "normali" e uno per gli "upper limits"
+data_list = []
+uppers_list = []
+uppers_count = 0
+
+# Analizzo ogni riga del file distinguendo uppers e dati normali mediante l'uso di "<"
+for row in data2:
+    x2, y2, err_y2 = row
+
+    if '<' in y2:
+        y2 = y2.replace('<', '')
+        uppers_list.append([float(x2), float(y2), float(err_y2) if err_y2 != '-' else 0.0])
+        uppers_count += 1
+    else:
+        data_list.append([float(x2), float(y2), float(err_y2) if err_y2 != '-' else 0.0])
+
+# Converto le liste in array di numpy e stampo il numero di conteggi di upper limits
+data_array = np.array(data_list)
+uppers_array = np.array(uppers_list)
+print("Numero di upper limits:", uppers_count)
+
+# Carico i dati di "Swift_PCWT.txt"
+data3 = np.loadtxt('Swift_PCWT.txt', comments='!', delimiter='\t')
+x3 = data3[:, 0]
+err_x3 = data3[:, 1] * 2
+y3 = data3[:, 3]
+err_y3 = data3[:, 4] * 2
+
+# Filtra i dati in base a val/err
+mask = y3 / err_y3 >= 3  # Cambiato il criterio di selezione
+x = x3[mask]
+y = y3[mask]
+err_y = err_y3[mask]
+
+# Creo una figura con tre subplots che hanno lo stesso asse x
+fig, (ax1, ax2, ax3) = plt.subplots(3, 1, sharex=True, figsize=(18, 12))
+
+# Grafico di MAGIC
+ax1.errorbar(x1, y1, xerr=err_x1, yerr=err_y1, marker='.', markersize=5, linestyle='', c='black', ecolor='cyan')
+ax1.set_ylabel('MAGIC Flux (1/cm2/s)')
+ax1.set_title('MAGIC (VHE gamma band)')
+
+# Grafico di FERMI (Dati normali e Upper limits)
+ax2.errorbar(data_array[:, 0], data_array[:, 1], xerr=0, yerr=data_array[:, 2], marker='.', markersize=5, linestyle='', c='black', ecolor='violet')
+ax2.errorbar(uppers_array[:, 0], uppers_array[:, 1], xerr=0, yerr=uppers_array[:, 2], uplims=True, marker='.', markersize=5, linestyle='', c='orange', alpha=0.7)
+ax2.set_ylabel('FERMI Flux (1/cm2/s)')
+ax2.set_title('FERMI-LAT (HE gamma band)')
+ax2.legend()
+
+# Grafico di Swift_PC
+ax3.errorbar(x3, y3, xerr=0, yerr=err_y3, marker='.', markersize=5, linestyle='', c='black', ecolor='orange', label='Swift-XRT datas')
+ax3.set_xlabel('MJD')
+ax3.set_ylabel('Swift data (counts/s)')
+ax3.set_title('Swift-XRT (X-ray band)')
+
+# Definisco la funzione per il fit costante
+def constant_func(x, a):
+    return np.full_like(x, a)
+
+# Eseguo il fit costante sui dati del primo file
+popt1, pcov1 = curve_fit(constant_func, x1, y1, sigma=err_y1)
+
+# Eseguo il fit costante solo sui dati del secondo file (data_array)
+popt2, pcov2 = curve_fit(constant_func, data_array[:, 0], data_array[:, 1], sigma=data_array[:, 2])
+
+# Eseguo il fit costante sui dati del terzo file
+popt3, pcov3 = curve_fit(constant_func, x, y, sigma=err_y)
+
+# Calcolo gli errori sui parametri del fit
+perr1 = np.sqrt(np.diag(pcov1))
+perr2 = np.sqrt(np.diag(pcov2))
+perr3 = np.sqrt(np.diag(pcov3))
+
+# Calcolo i valori predetti del fit costante per il primo file
+fit_y1 = constant_func(x1, *popt1)
+
+# Calcolo i valori predetti del fit costante per il secondo file
+fit_y2 = constant_func(data_array[:, 0], *popt2)
+
+# Calcolo i valori predetti del fit costante per il terzo file
+fit_y = constant_func(x, *popt3)
+
+# Trovo i limiti degli assi x per ogni subplot
+x_common_start = x3[0]
+x_common_end = x3[-1]
+
+# Aggiungo il fit al primo subplot con padding agli estremi
+ax1.plot(np.linspace(x_common_start, x_common_end, 100), constant_func(np.linspace(x_common_start, x_common_end, 100), *popt1), color='red')
+ax1.fill_between(np.linspace(x_common_start, x_common_end, 100), constant_func(np.linspace(x_common_start, x_common_end, 100), *(popt1 - perr1)), constant_func(np.linspace(x_common_start, x_common_end, 100), *(popt1 + perr1)), color='red', alpha=0.2)
+
+# Aggiungo il fit al secondo subplot con padding agli estremi
+ax2.plot(np.linspace(x_common_start, x_common_end, 100), constant_func(np.linspace(x_common_start, x_common_end, 100), *popt2), color='red', label='Constant fit')
+ax2.fill_between(np.linspace(x_common_start, x_common_end, 100), constant_func(np.linspace(x_common_start, x_common_end, 100), *(popt2 - perr2)), constant_func(np.linspace(x_common_start, x_common_end, 100), *(popt2 + perr2)), color='red', alpha=0.2)
+
+# Aggiungo il fit al terzo subplot con padding agli estremi
+ax3.plot(np.linspace(x_common_start, x_common_end, 100), constant_func(np.linspace(x_common_start, x_common_end, 100), *popt3), color='red', label='Constant fit')
+ax3.fill_between(np.linspace(x_common_start, x_common_end, 100), constant_func(np.linspace(x_common_start, x_common_end, 100), *(popt3 - perr3)), constant_func(np.linspace(x_common_start, x_common_end, 100), *(popt3 + perr3)), color='red', alpha=0.2)
+
+# Calcola la statistica del chi-quadro per i tre fit
+chi_squared_1 = np.sum((y1 - fit_y1)**2 / err_y1**2)
+chi_squared_2 = np.sum((data_array[:, 1] - fit_y2)**2 / data_array[:,2]**2)
+chi_squared_3 = np.sum((y - fit_y)**2 / err_y**2)
+
+# Calcola i gradi di libertà per i tre fit
+degrees_of_freedom_1 = len(x1) - 1
+degrees_of_freedom_2 = len(data_array[:, 0]) - 1
+degrees_of_freedom_3 = len(x) - 1
+
+print("Chi-square for fit 1:", chi_squared_1, " (degrees of freedom:", degrees_of_freedom_1, ")", "so the reduced Chi-square is:", chi_squared_1/degrees_of_freedom_1)
+print("Chi-square for fit 2:", chi_squared_2, " (degrees of freedom:", degrees_of_freedom_2, ")", "so the reduced Chi-square is:", chi_squared_2/degrees_of_freedom_2)
+print("Chi-square for fit 3:", chi_squared_3, " (degrees of freedom:", degrees_of_freedom_3, ")", "so the reduced Chi-square is:", chi_squared_3/degrees_of_freedom_3)
+
+# Stampa i risultati dei fit
+print("m_1 =", popt1, "+/-", perr1)
+print("m_2 =", popt2, "+/-", perr2)
+print("m_3 =", popt3, "+/-", perr3)
+
+# Calcola il p-value per il primo fit
+p_value_1 = chi2.sf(chi_squared_1, degrees_of_freedom_1)
+
+# Calcola il p-value per il secondo fit
+p_value_2 = chi2.sf(chi_squared_2, degrees_of_freedom_2)
+
+# Calcola il p-value per il terzo fit
+p_value_3 = chi2.sf(chi_squared_3, degrees_of_freedom_3)
+
+print("P-value for fit 1:", p_value_1)
+print("P-value for fit 2:", p_value_2)
+print("P-value for fit 3:", p_value_3)
+
+# Aggiungi una sola legenda per tutti e tre i grafici in alto a destra del primo subplot
+#ax1.legend(loc='upper right')
+
+ax1.grid()
+ax2.grid()
+ax3.grid()
+
+plt.tight_layout()
+plt.show()
