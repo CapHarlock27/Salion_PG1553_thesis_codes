@@ -1,0 +1,83 @@
+import numpy as np
+import matplotlib.pyplot as plt
+from scipy.stats import lognorm, norm
+from scipy.optimize import curve_fit
+
+# Carico i dati dal file "OJ_287_with_uppers_3d.txt"
+data = np.loadtxt('OJ_081_with_uppers_3d.txt', comments='!', delimiter='\t', dtype=object)
+
+# Inizializzo due set: uno per i dati "normali" e uno per gli "upper limits"
+data_list = []
+uppers_list = []
+uppers_count = 0
+
+# Filtraggio dei valori di y maggiori di 10^-6
+for row in data:
+    x, y, err_y = row
+
+    if '<' in y:
+        y = y.replace('<', '')
+        uppers_list.append([float(x), float(y), float(err_y) if err_y != '-' else 0.0])
+        uppers_count += 1
+    else:
+        data_list.append([float(x), float(y), float(err_y) if err_y != '-' else 0.0])
+
+# Applicazione del filtro ai dati normali
+data_list = [item for item in data_list if item[1] <= 6*1e-7]
+
+# Applicazione del filtro agli upper limits
+uppers_list = [item for item in uppers_list if item[1] <= 6*1e-7]
+
+# Converto le liste in array di numpy e stampo il numero di conteggi di upper limits
+data_array = np.array(data_list)
+uppers_array = np.array(uppers_list)
+print("Numero di upper limits:", uppers_count)
+
+# Creo l'istogramma per i dati normali e con '<'
+fig, ax4 = plt.subplots(1, 1, sharex=True, figsize=(8, 6))
+bin_edges = np.histogram_bin_edges(data_array[:, 1], bins=50)
+hist_data, bin_edges_data, patches_data = ax4.hist(data_array[:, 1], bins=bin_edges, color='purple', alpha = 0.7, edgecolor='black', label='Fermi-LAT datas')
+hist_uppers, _, _ = ax4.hist(uppers_array[:, 1], bins=bin_edges, color='pink', edgecolor='black', alpha = 0.7, label='Upper Limits', bottom=hist_data)
+
+# Calcolo e plotto i centroidi dei dati
+bin_centers_data = (bin_edges_data[:-1] + bin_edges_data[1:]) / 2
+ax4.scatter(bin_centers_data, hist_data, color='black', marker='o', label='Bin Centers')
+
+# Faccio il fit dei dati con la funzione log-normale
+def lognorm_fit(x, A, mu, sigma):
+    return A * lognorm.pdf(x, sigma, loc=0, scale=np.exp(mu))
+
+# Eseguo il fit ed estraggo i parametri stimati
+params, _ = curve_fit(lognorm_fit, bin_centers_data, hist_data, p0=[1, 5, 3])
+A_fit, mu_fit, sigma_fit = params
+print(mu_fit, sigma_fit)
+
+# Calcolo il valore dei parametri secondo la distribuzione log-normale e printo
+mu_fin = np.exp(mu_fit + 0.5 * sigma_fit ** 2)
+sigma_fin = np.sqrt(np.exp(2 * mu_fit + sigma_fit ** 2) * (np.exp(sigma_fit ** 2) - 1))
+print("Parametri del fit log-normale (mu, sigma):", mu_fin, sigma_fin)
+
+# Creo una curva log-normale con i parametri del fit e la plotto sull'istogramma
+x_fit = np.linspace(min(bin_centers_data), max(bin_centers_data), 1000)
+fit_y = lognorm_fit(x_fit, *params)
+ax4.plot(x_fit, fit_y, 'r-', label='Log-Normal Fit')
+
+# Faccio il fit dei dati con la funzione gaussiana
+def gauss_fit(x, A, mu, sigma):
+    return A * norm.pdf(x, mu, sigma)
+
+# Eseguo il fit ed estraggo i parametri stimati per la gaussiana
+params_gauss, _ = curve_fit(gauss_fit, bin_centers_data, hist_data, p0=[1, mu_fit, sigma_fit])
+_, mu_fit_gauss, sigma_fit_gauss = params_gauss
+print("Parametri del fit gaussiano (A, mu, sigma):", np.exp(mu_fit_gauss), np.exp(sigma_fit_gauss))
+
+# Imposta le etichette degli assi
+ax4.set_xlabel('Values (1/cm2/s)')
+ax4.set_ylabel('Counts')
+ax4.set_title('OJ 081 Fermi-LAT histogram (3 days binning)')
+
+# Mostro tutto
+ax4.legend()
+
+plt.tight_layout()
+plt.show()
